@@ -1,0 +1,29 @@
+#!/usr/bin/env python
+
+import os
+import time
+import sys
+import subprocess
+
+poll_interval = 1
+
+def command():
+    cmd = ' '.join(sys.argv)
+    print "Running %s" % cmd
+    subprocess.call([' '.join(sys.argv)], shell=True)
+
+def main():
+    _, path = sys.argv.pop(), sys.argv.pop()
+    command()
+    mtime = os.stat(path).st_mtime
+    while True:
+        new = os.stat(path).st_mtime
+        if new > mtime:
+            mtime = new
+            command()
+        time.sleep(poll_interval)
+
+
+if __name__ == '__main__':
+    main()
+
