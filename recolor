@@ -1,0 +1,178 @@
+#!/usr/bin/env python
+
+# GUI to replace #RRGGBB color tags in a file
+# Copyright 2011 Josh Bothun
+# joshbothun@gmail.com
+
+import sys
+import tempfile
+import re
+import math
+import os
+import shutil
+from copy import copy
+
+from PyQt4.QtCore import *
+from PyQt4.QtGui import *
+
+def getColors(path):
+    """ Find unique color tags in a file """
+    try:
+        file = open(path, 'r')
+        pat = re.compile(r'#[a-fA-F0-9]{6}')
+        tags = set()
+        for line in file:
+            for match in re.findall(pat, line):
+                tags.add(match.upper())
+        file.close()
+        return tags
+    except (OSError, IOError):
+        return None
+
+def setColors(inpath, colormap):
+    """ Replace color tags in `path` from dict `colormap` """
+    try:
+        infile = open(inpath, 'r')
+        fh, outpath = tempfile.mkstemp()
+        outfile = open(outpath, 'w')
+        for line in infile:
+            for oldcolor, newcolor in colormap.items():
+                if oldcolor in line:
+                    line = line.replace(oldcolor, newcolor)
+            outfile.write(line)
+        outfile.close()
+        infile.close()
+        os.close(fh)
+        # Move the temp file to original file location
+        os.remove(inpath)
+        shutil.move(outpath, inpath)
+        return True
+    except (OSError, IOError):
+        return False
+
+def getVisibleFore(bgcolor):
+    # Calculate black/white text
+    return '#FFFFFF' if int(bgcolor.strip('#'), 16) < 0x7fffff \
+           else "#000000"
+
+class MainWindow(QMainWindow):
+    def __init__(self, colors, infile):
+        # Init UI
+        QMainWindow.__init__(self)
+        self.infile = infile
+        self.frame = QWidget(self)
+        self.frame.setLayout(QVBoxLayout())
+        self.setCentralWidget(self.frame)
+        self.setStatusBar(QStatusBar(self))
+
+        # Color mapping
+        self.colormap = dict(zip(colors, colors))
+
+        # Populate color pickers
+        self.colorFrame = QWidget(self.frame)
+        self.colorFrame.setLayout(QGridLayout())
+        self.frame.layout().addWidget(self.colorFrame)
+        self.createColorButtons()
+        
+        # Static buttons
+        staticFrame = QWidget(self.frame)
+        staticFrame.setLayout(QHBoxLayout())
+        self.frame.layout().addWidget(staticFrame)
+        applyButton = QPushButton('Apply')
+        discardButton = QPushButton('Discard')
+        staticFrame.layout().addWidget(applyButton)
+        staticFrame.layout().addWidget(discardButton)
+
+        # Static button callbacks
+        self.connect(applyButton, SIGNAL('clicked()'), self.applyColors)
+        self.connect(discardButton, SIGNAL('clicked()'), self.discardColors)
+
+    def createColorButtons(self):
+        rows = int(math.sqrt(len(self.colormap.keys())))
+        for i, color in enumerate(self.colormap.keys()):
+
+
+            # Create the button
+            button = QPushButton(self)
+            button.setFlat(True)
+            pal = button.palette()
+            pal.setColor(button.backgroundRole(), QColor(color))
+            pal.setColor(button.foregroundRole(), QColor(getVisibleFore(color)))
+            button.setAutoFillBackground(True)
+            button.setPalette(pal)
+            button.setText(color)
+            self.colorFrame.layout().addWidget(button, i % rows, i / rows)
+
+            # HACK: Store color on button object
+            setattr(button, '_ORIG_COLOR', color)
+            setattr(button, '_COLOR', color)            
+
+            # Create closure around button and color
+            self.createSelectorClosure(button)
+
+    def discardColors(self):
+        # Reset map
+        for key, val in self.colormap.items():
+            self.colormap[key] = key
+        # Reset button colors
+        for widget in self.colorFrame.children():
+            if isinstance(widget, QPushButton):
+                self.setButtonColor(widget, widget._ORIG_COLOR)
+                widget.update()
+        self.statusBar().showMessage('Colors reset to default')
+
+    def applyColors(self):
+        if setColors(self.infile, self.colormap):
+            self.statusBar().showMessage('Colors successfully replaced!')
+        else:
+            self.statusBar().showMessage('ERROR: Could not replace colors')
+
+    def setButtonColor(self, button, tag):
+        color = QColor(tag)
+        pal = button.palette()
+        pal.setColor(button.backgroundRole(), color)
+        button.setPalette(pal)
+        button.setText(tag)
+
+    def createSelectorClosure(self, button):
+        # Create callback method
+        def selectColor():
+            color = getattr(button, '_COLOR', '#FFFFFF')
+            orig_color = getattr(button, '_ORIG_COLOR', '#FFFFFF')
+            new = QColorDialog.getColor(initial=QColor(color))
+            if new.isValid():
+                tag = str(new.name()).upper()
+                # Tag must be unique
+                if tag == orig_color or tag not in self.colormap.keys():
+                    # Update map
+                    self.colormap[orig_color] = tag
+                    # HACK: Update button color attr
+                    setattr(button, '_COLOR', tag)
+                    # Update label
+                    self.setButtonColor(button, tag)
+                else:
+                    QMessageBox.critical(self, 'Error', 'You must select a unique color.')
+
+        # Connect click function
+        self.connect(button, SIGNAL('clicked()'), selectColor)
+
+def main():
+    if len(sys.argv) < 2:
+        print 'Need an input file'
+        sys.exit()
+    
+    infile = sys.argv[1]
+    colors = getColors(infile)
+
+    if not colors:
+        print 'Unable to read file', infile
+        sys.exit()
+
+    # Run qt
+    app = QApplication(sys.argv)
+    window = MainWindow(colors, infile)
+    window.show()
+    sys.exit(app.exec_())
+
+if __name__ == '__main__':
+    main()
