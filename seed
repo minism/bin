@@ -1,24 +1,77 @@
 #!/usr/bin/env python
 
-from colorama import init, Fore
 import os
 import sys
 import subprocess
+import string
 
-PATH = os.path.expanduser('~/dev/seeds')
-seeds = [dir for dir in os.listdir(PATH) if not dir.startswith('.')]
+# Allowed template variables:
+#   {PWD}   Output directory of the seed
+
+
+# Terminal color definitions
+class fg:
+    BLACK   = '\033[30m'
+    RED     = '\033[31m'
+    GREEN   = '\033[32m'
+    YELLOW  = '\033[33m'
+    BLUE    = '\033[34m'
+    MAGENTA = '\033[35m'
+    CYAN    = '\033[36m'
+    WHITE   = '\033[37m'
+    RESET   = '\033[39m'
+
+class bg:
+    BLACK   = '\033[40m'
+    RED     = '\033[41m'
+    GREEN   = '\033[42m'
+    YELLOW  = '\033[43m'
+    BLUE    = '\033[44m'
+    MAGENTA = '\033[45m'
+    CYAN    = '\033[46m'
+    WHITE   = '\033[47m'
+    RESET   = '\033[49m'
+
+class style:
+    BRIGHT    = '\033[1m'
+    DIM       = '\033[2m'
+    NORMAL    = '\033[22m'
+    RESET_ALL = '\033[0m'
+
+
+# Globals
+SEEDPATH = os.getenv('SEEDPATH', os.path.expanduser('~/.seeds'))
+seeds = [dir for dir in os.listdir(SEEDPATH) if not dir.startswith('.')]
+template_context = {}
 
 def avail():
-    return 'Available seeds:\n  ' + Fore.CYAN + '\n  '.join(seeds) + Fore.RESET
+    return 'Available seeds:\n  ' + fg.CYAN + '\n  '.join(seeds) + fg.RESET
+
+def try_mkdirp(path):
+    try:
+        os.makedirs(path)
+    except OSError:
+        print "%sUnable to create directory '%s', exiting.%s" % (fg.RED, path, fg.RESET)
+        sys.exit(1)
+
+def process_file(inpath, outpath, **kwargs):
+    """ Process each file, running any template processors as necessary """
+    # Make intermediary directories?
+    if not os.path.exists(os.path.dirname(outpath)):
+        try_mkdirp(os.path.dirname(outpath))
+
+    # Run file through template and write
+    template = string.Template(open(inpath).read())
+    with open(outpath, 'w') as fh:
+        fh.write(template.safe_substitute(template_context, **kwargs))
 
 def main():
-    init()
     # Split args
     opts = [arg for arg in sys.argv if arg.startswith('-') or arg.startswith('--')]
     args = [arg for arg in sys.argv if arg not in opts]
 
     if len(sys.argv) < 2:
-        print 'Usage: %s seed [path] (options)' % os.path.basename(sys.argv[0])
+        print 'Usage: %s <seed-name> [args for seed]' % os.path.basename(sys.argv[0])
         print avail()
         sys.exit()
 
@@ -30,14 +83,30 @@ def main():
     if '--peek' in opts or '-p' in opts:
         subprocess.call(['find ' + os.path.join(PATH, seed)], shell=True)
     else:
-        argMsg = ''
-        if len(sys.argv) > 2:
-            root = sys.argv[2]
-            argMsg = ' to ' + Fore.RED + root + Fore.RESET
-        else:
-            root = os.getcwd()
-        subprocess.call(['rsync', '-aW', '--exclude=.*', os.path.join(PATH, seed) + '/', root])
-        print 'Expanded seed ' + Fore.RED + seed + Fore.RESET + argMsg
+        # Add extra arguments to template context as ARG1, ARG2, etc
+        for i in range(len(sys.argv) - 2):
+            template_context['ARG%s' % (i + 1)] = sys.argv[i + 2]
+
+        outdir = os.getcwd()
+        indir = os.path.join(SEEDPATH, seed)
+
+        # Create outdir?
+        if not os.path.exists(outdir):
+            try_mkdirp(outdir)
+
+        # Setup template context
+        template_context['PWD'] = outdir
+
+        # Process each file
+        for root, dirs, files in os.walk(indir):
+            for fn in files:
+                abspath = os.path.join(root, fn)
+                relpath = os.path.relpath(abspath, indir)
+                outpath = os.path.join(outdir, relpath)
+                print "Inflating file %s%s%s" % (fg.GREEN, relpath, fg.RESET,)
+                process_file(abspath, outpath)
+
+        print 'Expanded seed %s%s%s' % (fg.CYAN, seed, fg.RESET,)
 
 if __name__ == '__main__':
     main()
