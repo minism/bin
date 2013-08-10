@@ -1,15 +1,31 @@
 #!/usr/bin/env python
 
-# Interpolate a file with environment variables
+# Interpolate stdin with known environment variables and write to stdout
+#
+# Usage: envrep [key=val, ...]
+#
+# Variables are resolved in the following order
+#   1. Bash environment
+#   2. ~/.envrc
+#   3. Program args 
+# 
+# File to be interpolated should use python template string syntax, i.e. $var
 
 import sys
 import os
 import optparse
+import StringIO
+import ConfigParser
+
+
+CONFIG_FILE = '~/.envrc'
+ROOT_SECTION = 'root'
 
 
 class ExpandTemplateCommand(object):
     def run(self, *args):
         parser = optparse.OptionParser()
+        parser.disable_interspersed_args()
         parser.add_option("-i", "", dest="in_filename", help="input file to use (default: stdin)", metavar="FILE")
         parser.add_option("-o", "", dest="out_filename", help="output file to use (default: stdout)", metavar="FILE")
     
@@ -18,9 +34,28 @@ class ExpandTemplateCommand(object):
         self.in_file = sys.stdin if self.options.in_filename is None else open(self.options.in_filename, 'rb')
         self.out_file = sys.stdout if self.options.out_filename is None else open(self.options.out_filename, 'w+')
     
+        # 1. Bash environment
+        context = os.environ.copy()
+
+        # 2. Configuration file
+        cfg_path = os.path.expanduser(CONFIG_FILE)
+        cfg = ConfigParser.RawConfigParser()
+        if os.path.exists(cfg_path):
+            with open(cfg_path) as fh:
+                data = '[%s]\n' % ROOT_SECTION + fh.read()
+                fp = StringIO.StringIO(data)
+                cfg.readfp(fp)
+                for option in cfg.options(ROOT_SECTION):
+                    context[option] = cfg.get(ROOT_SECTION, option)
+
+        # 3. Program arguments
+        for pair in (arg.split('=') for arg in self.args):
+            if len(pair) == 2:
+                context[pair[0]] = pair[1]
+
         data = self.in_file.read()
         self.in_file.close()
-        self.out_file.write( data % os.environ )
+        self.out_file.write( data % context )
         self.out_file.close()
     
 if __name__ == '__main__':
