@@ -14,9 +14,9 @@
 import sys
 import os
 import optparse
+import string
 import StringIO
 import ConfigParser
-
 
 CONFIG_FILE = '~/.envrc'
 ROOT_SECTION = 'root'
@@ -55,9 +55,10 @@ class ExpandTemplateCommand(object):
 
         data = self.in_file.read()
         self.in_file.close()
-        self.out_file.write( data % context )
+        self.out_file.write(string.Template(data).safe_substitute(context))
         self.out_file.close()
     
 if __name__ == '__main__':
     cmd = ExpandTemplateCommand()
     cmd.run(sys.argv)
+
