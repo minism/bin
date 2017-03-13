@@ -1,0 +1,23 @@
+#!/usr/bin/env python
+
+# Prefix stdin with right-aligned line numbers.
+
+import sys
+import math
+
+
+SPACING = 2
+
+
+def main():
+    buf = []
+    for line in sys.stdin:
+        buf.append(line)
+        digits = int(math.log(len(buf), 10)) + 1
+        for i, line in enumerate(buf):
+            prefix = str(i + 1).rjust(digits)
+            sys.stdout.write("%s%s%s" % (prefix, ' ' * SPACING, line))
+
+
+if __name__ == '__main__':
+    main()
