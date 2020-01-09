@@ -1,0 +1,17 @@
+#!/usr/bin/env python
+
+import os
+import subprocess
+
+def main():
+    for root, dirs, files in os.walk(os.getcwd()):
+        if '.git' in dirs:
+            pull(root)
+
+def pull(root):
+    print "Executing git pull on %s" % root
+    p = subprocess.Popen('(cd %s && git pull)' % root, shell=True, stdout=subprocess.PIPE)
+    print p.stdout.read()
+
+if __name__ == '__main__':
+    main()
