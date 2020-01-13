@@ -1,0 +1,113 @@
+#!/usr/bin/env python
+
+# Scaffold will clone a directory tree to another tree, replacing directory
+# names, file names, and file contents according to rename rules.
+
+# Usage: scaffold <source_dir> <dest_dir> [--source-name=dest-name, ...]
+
+# Example: scaffold foo_templates bar_templates --foo=bar
+
+# `source-name` and `dest-name` should be given in lower-hyphen format, but will
+# automatically expand to the following renames in an attempt to preserve
+# word breaking style:
+#
+#   source-name -> dest-name
+#   source_name -> dest_name
+#   sourceName -> destName
+#   SourceName -> DestName
+
+import sys
+import os
+
+
+def upper_camel(name):
+  chunks = name.split('-')
+  return ''.join(map(str.capitalize, chunks))
+
+
+def lower_camel(name):
+  chunks = name.split('-')
+  return chunks[0] + ''.join(map(str.capitalize, chunks[1:]))
+
+
+name_transforms = [
+  lambda name: name,
+  lambda name: name.replace('-', '_'),
+  upper_camel,
+  lower_camel,
+]
+
+
+def die(msg):
+  print msg
+  sys.exit(1)
+
+
+def die_usage():
+  die("Usage: scaffold <source_dir> <dest_dir> [--source-name=dest-name, ...]")
+
+
+def expand_renames(key, val):
+  return [(nt(key), nt(val)) for nt in name_transforms]
+
+
+def parse_name_map(args):
+  name_map = {}
+  for arg in args:
+    try:
+      key, val = arg.split('=')
+    except ValueError:
+      die_usage()
+    if not key.startswith('--'):
+      die_usage()
+    name_map.update(expand_renames(key.lstrip('-'), val))
+  return name_map
+
+
+def write_transformed_file(original_path, new_path, name_map):
+  with open(original_path, 'r') as fh:
+    contents = fh.read()
+  for key, val in name_map.iteritems():
+    contents = contents.replace(key, val)
+  with open(new_path, 'w') as fh:
+    fh.write(contents)
+  print "Wrote %s" % new_path
+
+
+def do_copy(root, dirs, files, src_dir, dst_dir, name_map):
+  new_root = root.replace(src_dir, dst_dir, 1)
+  file_map = {}
+  for key, val in name_map.iteritems():
+    new_root = new_root.replace(key, val)
+    for file in files:
+      # Ignore successful replacements.
+      if file_map.get(file, file) != file:
+        continue
+      file_map[file] = file.replace(key, val)
+
+  # Write new files.
+  os.mkdir(new_root)
+  for original_file, new_file in file_map.iteritems():
+    write_transformed_file(
+        os.path.join(root, original_file),
+        os.path.join(new_root, new_file),
+        name_map)
+
+def main(argv):
+  if len(argv) < 4:
+    die_usage()
+
+  src_dir = argv[1]
+  dst_dir = argv[2]
+  name_map = parse_name_map(argv[3:])
+
+  if not os.path.exists(src_dir):
+    die('%s doesn\'t exist.' % src_dir)
+  if os.path.exists(dst_dir):
+    die('%s already exists (operation not yet supported).' % dst_dir)
+
+  for root, dirs, files in os.walk(src_dir):
+    do_copy(root, dirs, files, src_dir, dst_dir, name_map)
+
+if __name__ == '__main__':
+  main(sys.argv)
