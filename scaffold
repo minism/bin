@@ -18,6 +18,7 @@
 
 import sys
 import os
+from collections import OrderedDict
 
 
 def upper_camel(name):
@@ -30,6 +31,7 @@ def lower_camel(name):
   return chunks[0] + ''.join(map(str.capitalize, chunks[1:]))
 
 
+# Order matters here, earlier transforms will be preferred.
 name_transforms = [
   lambda name: name,
   lambda name: name.replace('-', '_'),
@@ -51,8 +53,8 @@ def expand_renames(key, val):
   return [(nt(key), nt(val)) for nt in name_transforms]
 
 
-def parse_name_map(args):
-  name_map = {}
+def parse_name_maps(args):
+  name_maps = []
   for arg in args:
     try:
       key, val = arg.split('=')
@@ -60,24 +62,24 @@ def parse_name_map(args):
       die_usage()
     if not key.startswith('--'):
       die_usage()
-    name_map.update(expand_renames(key.lstrip('-'), val))
-  return name_map
+    name_maps.extend(expand_renames(key.lstrip('-'), val))
+  return name_maps
 
 
-def write_transformed_file(original_path, new_path, name_map):
+def write_transformed_file(original_path, new_path, name_maps):
   with open(original_path, 'r') as fh:
     contents = fh.read()
-  for key, val in name_map.iteritems():
+  for key, val in name_maps:
     contents = contents.replace(key, val)
   with open(new_path, 'w') as fh:
     fh.write(contents)
   print "Wrote %s" % new_path
 
 
-def do_copy(root, dirs, files, src_dir, dst_dir, name_map):
+def do_copy(root, dirs, files, src_dir, dst_dir, name_maps):
   new_root = root.replace(src_dir, dst_dir, 1)
   file_map = {}
-  for key, val in name_map.iteritems():
+  for key, val in name_maps:
     new_root = new_root.replace(key, val)
     for file in files:
       # Ignore successful replacements.
@@ -91,7 +93,7 @@ def do_copy(root, dirs, files, src_dir, dst_dir, name_map):
     write_transformed_file(
         os.path.join(root, original_file),
         os.path.join(new_root, new_file),
-        name_map)
+        name_maps)
 
 def main(argv):
   if len(argv) < 4:
@@ -99,7 +101,7 @@ def main(argv):
 
   src_dir = argv[1]
   dst_dir = argv[2]
-  name_map = parse_name_map(argv[3:])
+  name_maps = parse_name_maps(argv[3:])
 
   if not os.path.exists(src_dir):
     die('%s doesn\'t exist.' % src_dir)
@@ -107,7 +109,7 @@ def main(argv):
     die('%s already exists (operation not yet supported).' % dst_dir)
 
   for root, dirs, files in os.walk(src_dir):
-    do_copy(root, dirs, files, src_dir, dst_dir, name_map)
+    do_copy(root, dirs, files, src_dir, dst_dir, name_maps)
 
 if __name__ == '__main__':
   main(sys.argv)
